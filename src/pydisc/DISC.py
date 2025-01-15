@@ -49,13 +49,13 @@ class DISC_Sequence:
         # idealization
         self.idealized_data: np.ndarray = None
         self.idealized_metric: float = None
-        
+
         # intermediate results
         self.intermediate_results: dict = None
 
         # mask array
         self.mask: np.ndarray = None
-    
+
     def run(self, bin_factor: int = 1, auto: bool = False, return_intermediate_results: bool = False, verbose: bool = False):
         func = auto_DISC if auto else run_DISC
         if self.mask is None:
@@ -97,7 +97,7 @@ class DISC_Sequence:
             self.idealized_data[~self.mask] = idealized_data
         self.n_idealized_levels = len(np.unique(idealized_data))
         self.bin_factor = bin_factor
-    
+
     def add_level(self, verbose: bool = False):
         if self.idealized_data is None:
             return
@@ -111,7 +111,7 @@ class DISC_Sequence:
                 self.n_idealized_levels = len(np.unique(self.idealized_data))
                 self.n_required_levels = self.n_idealized_levels + 1
         self.run(auto=False, return_intermediate_results=False, verbose=verbose)
-    
+
     def remove_level(self, verbose: bool = False):
         if self.idealized_data is None:
             return
@@ -131,7 +131,7 @@ class DISC_Sequence:
             return
         self.n_required_levels = n_required_levels
         self.run(auto=False, return_intermediate_results=False, verbose=verbose)
-    
+
     def merge_nearest_levels(self):
         if self.idealized_data is None:
             return
@@ -158,7 +158,7 @@ class DISC_Sequence:
             self.idealized_data[~self.mask] = idealized_data
         self.n_idealized_levels = len(np.unique(idealized_data))
         self.idealized_metric = information_criterion(data, idealized_data, self.agg_criterion)
-    
+
     def baum_welch_optimization(self, bin_factor: int = 1, level_means: np.ndarray = None, level_stdevs: np.ndarray = None, optimize_level_means=False, optimize_level_stdevs=False):
         if self.mask is None:
             data = self.data
@@ -182,7 +182,7 @@ class DISC_Sequence:
             self.intermediate_results = {}
         self.intermediate_results['final_hmm'] = hmm
         self.bin_factor = bin_factor
-    
+
     def get_mask_str(self) -> str:
         if self.mask is None:
             return ''
@@ -201,7 +201,7 @@ class DISC_Sequence:
             start, stop = rng.split(':')
             self.mask[int(start):int(stop)] = True
 
- 
+
 def bin_trace(trace, bin_factor):
     binned_trace = trace[::bin_factor].copy()
     nlastbin = 1
@@ -257,7 +257,7 @@ class DISCO(QWidget):
         self._criterion_plot.getAxis('left').setLabel('Criterion')
         self._criterion_plot.getAxis('bottom').setLabel('# Levels')
         self._criterion_plot.getAxis('bottom').setTickSpacing(5, 1)
-        
+
         # trace iteration
         self._trace_selector = QSpinBox()
         self._trace_selector.setRange(0, 0)
@@ -549,11 +549,11 @@ class DISCO(QWidget):
         vbox.setSpacing(0)
         vbox.addWidget(self._toolbar)
         vbox.addWidget(splitter)
-    
+
     @property
     def data(self):
         return self._traces
-    
+
     @data.setter
     def data(self, traces):
         for i, trace in enumerate(traces):
@@ -569,14 +569,14 @@ class DISCO(QWidget):
         self._trace_selector.setValue(1)
         self._trace_selector.setSuffix(f" of {len(traces)} ")
         self.replot()
-    
+
     def _side_by_side_button_layout(self, *buttons):
         hbox = QHBoxLayout()
         hbox.setContentsMargins(0, 0, 0, 0)
         for button in buttons:
             hbox.addWidget(button)
         return hbox
-    
+
     def load_zarr(self, filepath=''):
         if filepath == '':
             storeType, ok = QInputDialog.getItem(self, 'Zarr Store Type', 'Select a Zarr store type:', ['folder', '.zip'], 0)
@@ -619,13 +619,18 @@ class DISCO(QWidget):
         root = zarr.open_group(store, mode='w')
         for i, trace in enumerate(self._traces):
             group = root.create_group(f"trace.{i}")
-            group.create_dataset('data', data=trace.data)
+            # Ensure data is a numpy array and get its shape
+            data_array = np.asarray(trace.data)
+            group.create_dataset('data', data=data_array, shape=data_array.shape)
             if trace.idealized_data is not None:
-                group.create_dataset('idealized_data', data=trace.idealized_data)
+                ideal_array = np.asarray(trace.idealized_data)
+                group.create_dataset('idealized_data', data=ideal_array, shape=ideal_array.shape)
             if trace.noiseless_data is not None:
-                group.create_dataset('noiseless_data', data=trace.noiseless_data)
+                noise_array = np.asarray(trace.noiseless_data)
+                group.create_dataset('noiseless_data', data=noise_array, shape=noise_array.shape)
             if trace.mask is not None:
-                group.create_dataset('mask', data=trace.mask)
+                mask_array = np.asarray(trace.mask)
+                group.create_dataset('mask', data=mask_array, shape=mask_array.shape)
             if trace.tags:
                 group.attrs['tags'] = trace.tags
 
@@ -634,12 +639,12 @@ class DISCO(QWidget):
             n_traces = int(self.sim_n_traces_edit.text())
         except:
             n_traces = 1
-        
+
         try:
             n_pts = int(self.sim_n_samples_edit.text())
         except:
             n_pts = None
-        
+
         try:
             levels = self.sim_levels_edit.text().lstrip("[").rstrip("]")
             levels = np.array([float(x) for x in levels.split(",")])
@@ -651,7 +656,7 @@ class DISCO(QWidget):
             sigmas = np.array([float(x) for x in sigmas.split(",")])
         except:
             sigmas = None
-        
+
         try:
             rows = self.sim_trans_edit.text().split(",")
             trans_proba = []
@@ -667,13 +672,13 @@ class DISCO(QWidget):
             trace = DISC_Sequence(data)
             trace.noiseless_data = noiseless
             self._traces.append(trace)
-        
+
         self._trace_selector.setRange(1, n_traces)
         self._trace_selector.setValue(1)
         self._trace_selector.setSuffix(f" of {n_traces}")
-        
+
         self.replot()
-    
+
     def idealize_data(self, trace_indices: list[int] | str = "selected"):
         if not self._traces:
             return
@@ -697,7 +702,7 @@ class DISCO(QWidget):
             if i > 0:
                 progress.setValue(i)
                 QApplication.processEvents()
-        
+
             try:
                 trace.n_required_levels = int(self._num_levels_edit.text())
             except:
@@ -713,24 +718,24 @@ class DISCO(QWidget):
             if not auto:
                 trace.div_criterion = self._div_criterion_selector.currentText()
                 trace.agg_criterion = self._agg_criterion_selector.currentText()
-            
+
             trace.run(bin_factor=bin_factor, auto=auto, return_intermediate_results=True, verbose=verbose)
-        
+
             # only keep some of the intermediate results
             trace.intermediate_results = {
                 key: trace.intermediate_results[key]
                 for key in ['agg_levels', 'agg_metrics', 'agg_index', 'hmm_levels', 'hmm_metrics', 'hmm_index', 'final_hmm']
             }
-        
+
         self.replot()
         progress.close()
-    
+
     def idealize_selected_trace(self):
         self.idealize_data("selected")
-    
+
     def idealize_all_traces(self):
         self.idealize_data("all")
-    
+
     def add_level(self):
         if not self._traces:
             return
@@ -747,7 +752,7 @@ class DISCO(QWidget):
         self.replot()
 
         progress.close()
-    
+
     def remove_level(self):
         if not self._traces:
             return
@@ -764,35 +769,35 @@ class DISCO(QWidget):
         self.replot()
 
         progress.close()
-    
+
     def merge_nearest_levels(self):
         if not self._traces:
             return
         trace = self._traces[self._trace_selector.value() - 1]
         if trace.idealized_data is None:
             return
-        
+
         trace.merge_nearest_levels()
         self.replot()
-    
+
     def baum_welch_optimization(self):
         if not self._traces:
             return
         trace = self._traces[self._trace_selector.value() - 1]
         bin_factor = self._trace_binning.value()
-        
+
         try:
             level_means = self.hmm_levels_edit.text().lstrip("[").rstrip("]")
             level_means = np.array([float(x) for x in level_means.split(",")])
         except:
             level_means = None
-        
+
         try:
             level_stdevs = self.hmm_noise_edit.text().lstrip("[").rstrip("]")
             level_stdevs = np.array([float(x) for x in level_stdevs.split(",")])
         except:
             level_stdevs = None
-        
+
         optimize_level_means = not self._hmm_fix_means_toggle.isChecked()
         optimize_level_stdevs = not self._hmm_fix_stdevs_toggle.isChecked()
 
@@ -805,7 +810,7 @@ class DISCO(QWidget):
         self.replot()
 
         progress.close()
-    
+
     def set_trace(self, trace_index: int):
         if not self._traces:
             return
@@ -846,26 +851,26 @@ class DISCO(QWidget):
                             trace_index = i
                             foundit = True
                             break
-        
+
         self._last_trace_index = trace_index
 
         if self._trace_selector.value() != trace_index + 1:
             self._trace_selector.blockSignals(True)
             self._trace_selector.setValue(trace_index + 1)
             self._trace_selector.blockSignals(False)
-        
+
         self.replot()
-    
+
     def replot(self):
         self._trace_plot.clear()
         self._criterion_plot.clear()
         if not self._traces:
             return
-        
+
         trace_index = self._trace_selector.value() - 1
         trace = self._traces[trace_index]
         bin_factor = self._trace_binning.value()
-        
+
         data = trace.data
         if data is not None:
             if (trace.mask is not None) and self._mask_checkbox.isChecked():
@@ -874,19 +879,19 @@ class DISCO(QWidget):
             if bin_factor > 1:
                 data = bin_trace(data, bin_factor)
             self._trace_plot.plot(data, pen=pg.mkPen(QColor.fromRgb(0, 114, 189), width=1))
-        
+
         # # for debugging
         # if isinstance(trace.intermediate_results, dict):
         #     div_idealized_data = trace.intermediate_results.get('div_idealized_data', None)
         #     if div_idealized_data is not None:
         #         self._trace_plot.plot(div_idealized_data, pen=pg.mkPen(QColor.fromRgb(0, 155, 255), width=1))
-        
+
         idealized_data = trace.idealized_data
         if idealized_data is not None:
             if bin_factor > 1:
                 idealized_data = bin_trace(idealized_data, bin_factor)
             self._trace_plot.plot(idealized_data, pen=pg.mkPen(QColor.fromRgb(217,  83,  25), width=2))
-        
+
         if isinstance(trace.intermediate_results, dict):
             agg_levels = trace.intermediate_results.get('agg_levels', None)
             agg_metrics = trace.intermediate_results.get('agg_metrics', None)
@@ -896,7 +901,7 @@ class DISCO(QWidget):
                 self._criterion_plot.getAxis('left').setLabel(trace.agg_criterion)
             else:
                 self._criterion_plot.getAxis('left').setLabel('Criterion')
-            
+
             hmm_levels = trace.intermediate_results.get('hmm_levels', None)
             hmm_metrics = trace.intermediate_results.get('hmm_metrics', None)
             if hmm_metrics is not None:
@@ -904,39 +909,39 @@ class DISCO(QWidget):
                 self._criterion_plot.plot(hmm_levels, hmm_metrics, pen=pg.mkPen(color, width=1), symbol='o', symbolPen=pg.mkPen(color, width=1), symbolBrush=color)
         else:
             self._criterion_plot.getAxis('left').setLabel('Criterion')
-        
+
         if (idealized_data is not None) and (trace.idealized_metric is not None):
             n_idealized_levels = len(np.unique(idealized_data[~np.isnan(idealized_data)]))
             color = QColor.fromRgb(217,  83,  25)
             self._criterion_plot.plot([n_idealized_levels], [trace.idealized_metric], pen=pg.mkPen(color, width=1), symbol='o', symbolPen=pg.mkPen(color, width=1), symbolBrush=color)
-        
+
         # self._criterion_plot.autoRange()
 
         self._tags_edit.setText(trace.tags)
-    
+
     def _set_to_fastest_settings(self):
         self._auto_criterion_toggle.setChecked(False)
         self._hmm_algorithm_selector.setCurrentText("Viterbi")
         self._hmm_scan_toggle.setChecked(False)
         self._final_baum_welch_optimization_toggle.setChecked(False)
-    
+
     def _set_to_most_accurate_settings(self):
         self._auto_criterion_toggle.setChecked(True)
         self._hmm_algorithm_selector.setCurrentText("Baum-Welch")
         self._hmm_scan_toggle.setChecked(True)
         self._final_baum_welch_optimization_toggle.setChecked(True)
-    
+
     def _on_auto_disc_toggled(self):
         self._div_criterion_selector.setEnabled(not self._auto_criterion_toggle.isChecked())
         self._agg_criterion_selector.setEnabled(not self._auto_criterion_toggle.isChecked())
-    
+
     def _on_num_levels_changed(self):
         self._hmm_scan_toggle.setEnabled(self._num_levels_edit.text().strip() == "")
-    
+
     def _on_hmm_algorithm_changed(self):
         self._final_baum_welch_optimization_toggle.setEnabled(self._hmm_algorithm_selector.currentText() != "Baum-Welch")
         self._num_viterbi_repeats.setEnabled(self._hmm_algorithm_selector.currentText() == "Viterbi")
-    
+
     def _edit_mask_for_selected_trace(self):
         trace_index = self._trace_selector.value() - 1
         trace = self._traces[trace_index]
@@ -945,13 +950,13 @@ class DISCO(QWidget):
         if ok:
             trace.set_mask_str(mask_str)
             self.replot()
-    
+
     def _on_tags_edited(self):
         if not self._traces:
             return
         trace = self._traces[self._trace_selector.value() - 1]
         trace.tags = self._tags_edit.text()
-    
+
     def _on_tags_filter_edited(self):
         pass
 
@@ -965,14 +970,14 @@ class SegmentationTreeNode:
         self.indices = indices
         self.parent: SegmentationTreeNode = parent
         self.children: list[SegmentationTreeNode] = []
-    
+
     @property
     def root(self) -> SegmentationTreeNode:
         node = self
         while node.parent is not None:
             node = node.parent
         return node
-    
+
     @property
     def first_child(self) -> SegmentationTreeNode | None:
         if self.children:
@@ -982,7 +987,7 @@ class SegmentationTreeNode:
     def last_child(self) -> SegmentationTreeNode | None:
         if self.children:
             return self.children[-1]
-    
+
     @property
     def next_sibling(self) -> SegmentationTreeNode | None:
         if self.parent is not None:
@@ -998,7 +1003,7 @@ class SegmentationTreeNode:
             i: int = siblings.index(self)
             if i-1 >= 0:
                 return siblings[i-1]
-    
+
     def depth(self, root: SegmentationTreeNode = None) -> int:
         depth: int = 0
         node: SegmentationTreeNode = self
@@ -1006,7 +1011,7 @@ class SegmentationTreeNode:
             depth += 1
             node = node.parent
         return depth
-    
+
     def next_depth_first(self) -> SegmentationTreeNode | None:
         if self.children:
             return self.children[0]
@@ -1019,7 +1024,7 @@ class SegmentationTreeNode:
             if next_sibling is not None:
                 return next_sibling
             node = node.parent
-    
+
     def has_ancestor(self, node: SegmentationTreeNode) -> bool:
         ancestor = self
         while ancestor is not None:
@@ -1027,10 +1032,10 @@ class SegmentationTreeNode:
                 return True
             ancestor = ancestor.parent
         return False
-    
+
     def is_leaf(self) -> bool:
         return not self.children
-    
+
     def leaves(self) -> list[SegmentationTreeNode]:
         leaves: list[SegmentationTreeNode] = []
         node = self
@@ -1051,7 +1056,7 @@ def simulate_trace(
 
     if n_pts is None:
         n_pts = np.random.choice(np.arange(100, 3000, dtype=int))
-    
+
     if levels is None:
         if transition_proba is not None:
             n_levels = len(transition_proba)
@@ -1062,31 +1067,31 @@ def simulate_trace(
         levels = np.arange(n_levels) + np.random.uniform(-0.2, 0.2, size=n_levels)
     else:
         n_levels = len(levels)
-    
+
     if sigmas is None:
         sigmas = np.random.uniform(0.25, 0.4, size=n_levels)
-    
+
     if transition_proba is None:
         transition_proba = np.random.random([n_levels, n_levels])
         for i, row in enumerate(transition_proba):
             row[i] = np.random.uniform(0.8, 0.99)
             j = np.arange(n_levels, dtype=int) != i
             row[j] = (1 - row[i]) * row[j] / row[j].sum()
-    
+
     state_seq = np.zeros(n_pts, dtype=int)
     state_seq[0] = np.random.choice(np.arange(n_levels))
     rvs = np.random.random(size=n_pts)
     transition_proba_cumsum = np.cumsum(transition_proba, axis=1)
     for t in range(1, n_pts):
         state_seq[t] = np.where(rvs[t] < transition_proba_cumsum[state_seq[t-1],:])[0][0]
-    
+
     data = np.zeros(n_pts)
     noiseless = np.zeros(n_pts)
     for state in range(n_levels):
         is_state = state_seq == state
         data[is_state] = stats.norm.rvs(levels[state], sigmas[state], size=is_state.sum())
         noiseless[is_state] = levels[state]
-    
+
     if level_per_event_heterogeneity > 0:
         starts, stops = find_piecewise_constant_segments(state_seq)
         n_events = len(starts)
@@ -1094,7 +1099,7 @@ def simulate_trace(
         event_offsets = stats.norm.rvs(0, 1, size=n_events) * sigmas[event_states] * level_per_event_heterogeneity
         for start, stop, offset in zip(starts, stops, event_offsets):
             data[start:stop] += offset
-    
+
     return data, noiseless, (levels, sigmas, transition_proba, level_per_event_heterogeneity)
 
 
@@ -1237,9 +1242,9 @@ def divisive_segmentation(data: np.ndarray, criterion="BIC", level_func=np.media
     node = root
     forced_split = None
     while node is not None:
-        # data in cluster 
+        # data in cluster
         cluster_data = data[node.indices]
-        
+
         # try splitting the cluster in two
         if len(np.unique(cluster_data)) >= 3:#2:
             # kmeans_splitter.init = np.quantile(np.unique(cluster_data), [[0.33], [0.66]]).reshape([-1,1])
@@ -1280,10 +1285,10 @@ def divisive_segmentation(data: np.ndarray, criterion="BIC", level_func=np.media
                     # try to split first child
                     node = child0
                     continue
-            
+
         # if we are done splitting this node, go to next node
         node = node.next_depth_first()
-    
+
     if n_required_levels is not None:
         while len(np.unique(idealized_data)) < n_required_levels:
             # split leaves of tree until we have at least n_levels
@@ -1321,7 +1326,7 @@ def divisive_segmentation(data: np.ndarray, criterion="BIC", level_func=np.media
                     if np.unique(idealized_data).size < n_required_levels:
                         raise RuntimeError("More levels requested than exist in data.")
                 break
-    
+
     return idealized_data, root
 
 
@@ -1339,7 +1344,7 @@ def agglomerative_clustering(data, idealized_data, level_func=np.median):
         # Ward's distance between each level
         # ward_dist = (2 * level_npts[:-1] * level_npts[1:] / (level_npts[:-1] + level_npts[1:]))**0.5 * (levels[:-1] - levels[1:])**2
         ward_merge_cost = level_npts[:-1] * level_npts[1:] / (level_npts[:-1] + level_npts[1:]) * (levels[:-1] - levels[1:])**2
-        
+
         # merge levels with minimal Ward distance
         j = np.argmin(ward_merge_cost)
         k = j + 1
@@ -1367,7 +1372,7 @@ def information_criterion(data: np.ndarray, idealized_data: np.ndarray, criterio
             return np.log(n_pts) * dof
         else:
             return goodness_of_fit + np.log(n_pts) * dof
-    
+
     # if criterion == "MDL":
     #     pass # TODO
 
@@ -1443,12 +1448,12 @@ def gmm_idealization(
         if not optimize_stdevs:
             state.covs.frozen = True
         states.append(state)
-    
+
     gmm = GeneralMixtureModel(states)
     X = torch.tensor(data.reshape(-1,1)).float()
     gmm.fit(X)
     state_sequence = gmm.predict(X).numpy().reshape(data.shape)
-    
+
     idealized_data = np.zeros(data.shape)
     for i in range(n_states):
         in_state = state_sequence == i
@@ -1459,13 +1464,13 @@ def gmm_idealization(
 
 
 def hmm_idealization_refinement(
-    data: np.ndarray, 
-    idealized_data: np.ndarray = None, 
+    data: np.ndarray,
+    idealized_data: np.ndarray = None,
     level_means: np.ndarray = None,
     level_stdevs: np.ndarray = None,
     optimize_level_means=True,
     optimize_level_stdevs=True,
-    algorithm='viterbi', 
+    algorithm='viterbi',
     minimum_transition_proba=0.02
     ):
 
@@ -1473,7 +1478,7 @@ def hmm_idealization_refinement(
         raise ValueError("Either idealized_data or level_means must be provided.")
 
     n_pts = len(data)
-    
+
     if level_means is not None:
         # idealized data from state distributions
         idealized_data, gmm = gmm_idealization(data, means=level_means, stdevs=level_stdevs, optimize_means=False, optimize_stdevs=False)
@@ -1498,7 +1503,7 @@ def hmm_idealization_refinement(
                 level_stdevs[:] = gaussian_noise_estimate(data)
             else:
                 level_stdevs[sigma_is_zero] = np.mean(level_stdevs[~sigma_is_zero])
-    
+
     # estimated state transition probabilities from idealized data
     if n_levels == 1:
         transition_proba = np.ones([1,1])
@@ -1521,7 +1526,7 @@ def hmm_idealization_refinement(
             norm = transition_proba.sum(axis=1).reshape((-1,1))
             norm[norm == 0] = 1 / n_pts
             transition_proba /= norm
-    
+
     # estimated state starting probabilities
     # TODO: set to equilibrium probabilities using transition matrix?
     start_proba = np.ones(n_levels) / n_levels
@@ -1546,7 +1551,7 @@ def hmm_idealization_refinement(
                     level_means[i] = np.mean(data[in_state])
                 if optimize_level_stdevs and (n_state > 1):
                     level_stdevs[i] = np.std(data[in_state])
-    
+
     elif algorithm == 'baum-welch':
         states = []
         for i in range(n_levels):
@@ -1556,10 +1561,10 @@ def hmm_idealization_refinement(
             if not optimize_level_stdevs:
                 state.covs.frozen = True
             states.append(state)
-        
+
         transition_proba = torch.tensor(transition_proba).float()
         start_proba = torch.tensor(start_proba).float()
-        
+
         hmm = DenseHMM(states, starts=start_proba, edges=transition_proba)
 
         # reshape data [number of sequences, sequence length, dimensions of each data point] and convert to tensor
@@ -1573,7 +1578,7 @@ def hmm_idealization_refinement(
 
         # optimal state sequence
         state_sequence = hmm.predict(X).numpy().reshape(data.shape)
-    
+
     else:
         raise ValueError(f"Unknown algorithm: {algorithm}")
 
@@ -1583,7 +1588,7 @@ def hmm_idealization_refinement(
         if not np.any(in_state):
             continue
         idealized_data[in_state] = level_means[i]
-    
+
     return idealized_data, hmm
 
 
@@ -1680,7 +1685,7 @@ def run_DISC(
         print(f'required levels: {n_required_levels}')
         print(f'div criterion: {div_criterion}')
         print(f'agg criterion: {agg_criterion}')
-    
+
     n_pts = len(data)
 
     # divisive segmentation
@@ -1693,19 +1698,19 @@ def run_DISC(
     div_tree = [None] * n_div_attempts
     for i in range(n_div_attempts):
         div_idealized_data[i], div_tree[i] = divisive_segmentation(data, criterion=div_criterion, level_func=level_func, n_required_levels=n_required_levels)
-    
+
     if verbose:
         toc = time.time()
         print(f'div (x{n_div_attempts}): {toc - tic} sec')
         tic = toc
-    
+
     # agglomerative clustering (for each divisive segmentation result)
     agg_idealized_data = [None] * n_div_attempts
     agg_metrics = [None] * n_div_attempts
     agg_index = [None] * n_div_attempts
     for i in range(n_div_attempts):
         agg_idealized_data[i] = agglomerative_clustering(data, div_idealized_data[i], level_func=level_func)
-        
+
         # evaluate agglomeration metric
         n_agg_traces = len(agg_idealized_data[i])
         agg_metrics[i] = np.empty(n_agg_traces)
@@ -1737,7 +1742,7 @@ def run_DISC(
             else:
                 if j + 1 >= n_required_levels:
                     break
-    
+
         # choose agglomeration level
         if n_required_levels is not None:
             if n_required_levels > n_agg_traces:
@@ -1745,7 +1750,7 @@ def run_DISC(
             agg_index[i] = n_required_levels - 1
         else:
             agg_index[i] = None
-            
+
             # non_nan = ~np.isnan(agg_metrics[i])
             # ind = np.where(non_nan)[0]
             # metrics = agg_metrics[i][non_nan]
@@ -1763,7 +1768,7 @@ def run_DISC(
                         agg_index[i] = np.nanargmin(agg_metrics[i][:2])
                 except [IndexError, ValueError]:
                     agg_index[i] = 0
-    
+
     # choose segmentation that resulted in the best selected agglomeration metric
     div_index = np.argmin([agg_metrics[i][index] for i, index in enumerate(agg_index)])
     div_idealized_data = div_idealized_data[div_index]
@@ -1784,7 +1789,7 @@ def run_DISC(
         tic = toc
         print(f'div levels: {len(np.unique(div_idealized_data))}')
         print(f'agg levels: {agg_levels[agg_index]}')
-    
+
     # hidden Markov model
     hmm_kwargs = {
         'algorithm': hmm_algorithm,
@@ -1852,7 +1857,7 @@ def run_DISC(
         print(f'HMM: {toc - tic} sec')
         print(f'HMM levels: {hmm_levels[hmm_index]}')
         tic = toc
-    
+
     # idealization
     idealized_data = hmm_idealized_data[hmm_index]
     n_idealized_levels = hmm_levels[hmm_index]
@@ -1873,7 +1878,7 @@ def run_DISC(
             n_idealized_levels = len(np.unique(idealized_data))
             idealized_metric = merged_metric
             did_merge = True
-        
+
         # if we did not accept any merge, try adding two levels and then merging.
         # this can sometimes identify levels with few data points.
         if not did_merge:
@@ -1909,7 +1914,7 @@ def run_DISC(
                     n_idealized_levels = n_test_levels
                     idealized_metric = test_metric
                     final_hmm = hmm
-        
+
         if did_merge:
             # need HMM refinement after merging
             idealized_data, final_hmm = hmm_idealization_refinement(data, idealized_data, algorithm=hmm_algorithm, optimize_level_means=hmm_optimize_states, optimize_level_stdevs=hmm_optimize_states)
@@ -1923,7 +1928,7 @@ def run_DISC(
             toc = time.time()
             print(f'merging: {toc - tic} sec')
             tic = toc
-    
+
     # # chosen agglomeration level
     # agg_idealized_data = agg_idealized_data[agg_index]
 
@@ -1940,12 +1945,12 @@ def run_DISC(
             toc = time.time()
             print(f'final HMM: {toc - tic} sec')
             tic = toc
-    
+
     if verbose:
         print(f'levels: {n_idealized_levels}')
         print(f'metric: {idealized_metric}')
         print('--------------------------')
-    
+
     if return_intermediate_results:
         intermediate_results = {
             'div_idealized_data': div_idealized_data,
@@ -1962,7 +1967,7 @@ def run_DISC(
             'final_hmm': final_hmm,
         }
         return idealized_data, idealized_metric, intermediate_results
-    
+
     return idealized_data, idealized_metric
 
 
@@ -2029,7 +2034,7 @@ def auto_DISC(
             return_intermediate_results = return_intermediate_results,
             verbose = verbose
             )
-    
+
     return results, criterion
 
 
