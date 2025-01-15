@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 import numpy as np
+import pandas as pd
 from scipy import stats
 from sklearn.cluster import KMeans
 # from sklearn.mixture import GaussianMixture
@@ -15,7 +16,11 @@ import zarr
 
 from qtpy.QtCore import Qt, QSize
 from qtpy.QtGui import QColor
-from qtpy.QtWidgets import QSplitter, QWidget, QHBoxLayout, QVBoxLayout, QFormLayout, QLineEdit, QSpinBox, QSizePolicy, QComboBox, QCheckBox, QToolBar, QToolButton, QMenu, QWidgetAction, QProgressDialog, QApplication, QPushButton, QFileDialog, QAction, QInputDialog, QLabel
+from qtpy.QtWidgets import (QSplitter, QWidget, QHBoxLayout, QVBoxLayout, QFormLayout,
+                          QLineEdit, QSpinBox, QSizePolicy, QComboBox, QCheckBox, QToolBar,
+                          QToolButton, QMenu, QWidgetAction, QProgressDialog, QApplication,
+                          QPushButton, QFileDialog, QAction, QInputDialog, QLabel,
+                          QScrollArea, QMessageBox)
 import pyqtgraph as pg
 import qtawesome as qta
 
@@ -228,6 +233,33 @@ def unbin_trace(binned_trace, bin_factor, trace_length=None):
     return trace
 
 
+def analyze_traces(traces):
+    results = []
+
+    for i, trace in enumerate(traces):
+        if trace.idealized_data is not None:
+            # Get unique states and their counts
+            unique_states = np.unique(trace.idealized_data[~np.isnan(trace.idealized_data)])
+            n_states = len(unique_states)
+
+            # Find event durations
+            state_changes = np.where(np.diff(trace.idealized_data) != 0)[0] + 1
+            starts = np.concatenate(([0], state_changes))
+            stops = np.concatenate((state_changes, [len(trace.idealized_data)]))
+            durations = stops - starts
+            states = trace.idealized_data[starts]
+
+            # Store results
+            for state, duration in zip(states, durations):
+                results.append({
+                    'trace_id': i,
+                    'state': state,
+                    'duration': duration,
+                    'n_states': n_states
+                })
+
+    return pd.DataFrame(results)
+
 class DISCO(QWidget):
 
     def __init__(self, *args, **kwargs):
@@ -331,6 +363,12 @@ class DISCO(QWidget):
         self._hmm_settings_button = QToolButton()
         self._hmm_settings_button.setIcon(qta.icon('ph.gear', opacity=0.75))
         self._hmm_settings_button.setToolTip("HMM settings")
+
+        # Add export analysis button
+        self._export_button = QToolButton()
+        self._export_button.setIcon(qta.icon('fa.download', opacity=0.75))
+        self._export_button.setToolTip("Export analysis results")
+        self._export_button.pressed.connect(self.export_analysis)
 
         # DISC controls
         self._num_levels_edit = QLineEdit()
@@ -536,6 +574,8 @@ class DISCO(QWidget):
         self._toolbar.addWidget(self._tags_edit)
         self._toolbar.addAction(self._tags_filter_icon_action)
         self._toolbar.addWidget(self._tags_filter_edit)
+        self._toolbar.addSeparator()
+        self._toolbar.addWidget(self._export_button)
         self._toolbar.setIconSize(QSize(24, 24))
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -963,6 +1003,53 @@ class DISCO(QWidget):
     def _is_tags_filter_enabled(self) -> bool:
         return self._tags_filter_edit.text().strip() != ""
 
+    def export_analysis(self):
+        results_df = analyze_traces(self._traces)
+
+        # Get save filename
+        filepath, _ = QFileDialog.getSaveFileName(
+            self,
+            'Save analysis results...',
+            filter='CSV files (*.csv)'
+        )
+
+        if filepath:
+            results_df.to_csv(filepath, index=False)
+
+            # Create custom message box with scrollable content
+            msg = QMessageBox(self)
+            msg.setWindowTitle("Export Complete")
+            msg.setIcon(QMessageBox.Information)
+
+            # Create scrollable text area
+            scroll = QScrollArea()
+            widget = QWidget()
+            layout = QVBoxLayout(widget)
+
+            # Add summary text
+            summary_text = (
+                f"Analysis results saved to:\n{filepath}\n\n"
+                f"Total traces: {len(self._traces)}\n\n"
+                "States per trace:\n"
+                f"{results_df.groupby('trace_id')['n_states'].first().value_counts().to_string()}\n\n"
+                "Mean durations per state:\n"
+                f"{results_df.groupby('state')['duration'].mean().to_string()}"
+            )
+
+            label = QLabel(summary_text)
+            layout.addWidget(label)
+
+            # Set up scroll area
+            scroll.setWidget(widget)
+            scroll.setWidgetResizable(True)
+            scroll.setFixedHeight(400)  # Limit height
+            scroll.setFixedWidth(min(600, self.width()))  # Limit width
+
+            # Set up message box
+            msg.layout().addWidget(scroll, 0, 0, 1, msg.layout().columnCount())
+            msg.setStandardButtons(QMessageBox.Ok)
+
+            msg.exec()
 
 class SegmentationTreeNode:
 
